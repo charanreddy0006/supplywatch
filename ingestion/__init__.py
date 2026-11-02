@@ -1,0 +1,1 @@
+"""SupplyWatch ingestion package."""
