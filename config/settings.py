@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 
 @dataclass(frozen=True)
@@ -14,9 +15,12 @@ class Settings:
     http_max_retries: int = 3
     raw_data_dir: Path = Path("data/raw")
     ports_url: str = "https://gis.unocha.org/server/rest/services/Hosted/global_world_seaport_index_202511/FeatureServer/0/query"
+    database_url: str = "postgresql+psycopg://supplywatch:supplywatch@localhost:5432/supplywatch"
+    exposure_thresholds_km: tuple[float, ...] = (50.0, 100.0, 250.0)
 
     @classmethod
     def from_env(cls) -> "Settings":
+        load_dotenv()
         return cls(
             environment=os.getenv("SUPPLYWATCH_ENV", "development"),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
@@ -27,4 +31,6 @@ class Settings:
             http_max_retries=int(os.getenv("HTTP_MAX_RETRIES", "3")),
             raw_data_dir=Path(os.getenv("RAW_DATA_DIR", "data/raw")),
             ports_url=os.getenv("PORTS_URL", cls.ports_url),
+            database_url=os.getenv("DATABASE_URL", cls.database_url),
+            exposure_thresholds_km=tuple(float(x) for x in os.getenv("EXPOSURE_THRESHOLDS_KM", "50,100,250").split(",") if x.strip()),
         )

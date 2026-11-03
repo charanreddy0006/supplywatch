@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-supplywatch}
+      POSTGRES_USER: ${POSTGRES_USER:-supplywatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-locally}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - supplywatch_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-supplywatch} -d ${POSTGRES_DB:-supplywatch}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+volumes:
+  supplywatch_pgdata:

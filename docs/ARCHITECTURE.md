@@ -6,4 +6,20 @@ The HTTP client uses bounded retries for connection/timeouts, HTTP 429 and serve
 
 Raw payloads are immutable, uniquely named JSON files and are never replaced. Normalized outputs are deliberately separate and lightweight for Day 1. The manifest contains no credentials. Event timestamps and ingestion timestamps use UTC.
 
-For Day 2, the extractor output can be loaded into PostgreSQL Bronze tables alongside source payload references, then cleaned to Silver tables with deduplication and spatial association. Day 3 can build analytical tables and exposure indicators without labeling them as confirmed operations disruptions. Airflow on Day 4 can invoke the same pipeline functions as tasks; PostgreSQL/dbt transformations and dashboard reads remain later milestones.
+## Day 2 data platform
+
+```mermaid
+flowchart LR
+  A[Day 1 immutable raw GeoJSON] --> B[Bronze JSONB by run]
+  C[Day 1 normalized JSON] --> D[Coordinate and field validation]
+  D --> E[Silver ports and earthquakes]
+  E --> F[PostGIS geography GiST indexes]
+  F --> G[ST_DWithin candidate filter]
+  G --> H[ST_Distance in meters]
+  H --> I[port_event_exposure]
+  I --> J[SQL analytics]
+```
+
+Bronze retains original feature payloads, source IDs where present, run IDs, hashes and ingestion timestamps. Silver keys ports by WPI `index_no` and events by USGS event ID. Geographic point columns use `geography(Point,4326)` for ellipsoidal distance in meters and GiST indexing. The exposure processor filters at the maximum configured radius (default 250 km), assigns one closest applicable band, and upserts each unique pair. Missing events in a later feed are not deleted. Exposure is geographic proximity evidence only.
+
+The implementation entry points and actual environment constraints are recorded in [DAY_2_IMPLEMENTATION.md](DAY_2_IMPLEMENTATION.md).
