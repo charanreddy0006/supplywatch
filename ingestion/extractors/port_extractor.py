@@ -12,6 +12,7 @@ class PortExtractor:
     def __init__(self, client: HttpClient, endpoint: str) -> None:
         self.client, self.endpoint = client, endpoint
         self.invalid_records = self.duplicates_removed = 0
+        self.snapshot_complete = False
         self.logger = logging.getLogger(__name__)
 
     def fetch(self) -> dict[str, Any]:
@@ -26,7 +27,10 @@ class PortExtractor:
                 raise ValueError("ArcGIS query did not return a GeoJSON feature list")
             page = payload["features"]
             features.extend(page)
-            if len(page) < page_size:
+            if payload.get("exceededTransferLimit", False) and not page:
+                raise ValueError("ArcGIS reported additional records but returned an empty page")
+            if len(page) < page_size and not payload.get("exceededTransferLimit", False):
+                self.snapshot_complete = True
                 break
             offset += len(page)
         return {"type": "FeatureCollection", "features": features}

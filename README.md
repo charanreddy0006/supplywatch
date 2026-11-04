@@ -35,7 +35,7 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Settings are read from process environment variables; Python does not load `.env` automatically. Set desired variables in the shell or use a local environment loader. No API credentials are needed for the implemented public endpoints.
+Settings are read from process environment variables and the ignored local `.env` file through `python-dotenv`. Shell environment values take precedence. No API credentials are needed for the implemented public endpoints.
 
 Configurable variables include `SUPPLYWATCH_ENV`, `LOG_LEVEL`, `USGS_BASE_URL`, `USGS_DAYS`, `HTTP_CONNECT_TIMEOUT`, `HTTP_READ_TIMEOUT`, `HTTP_MAX_RETRIES`, `RAW_DATA_DIR`, and `PORTS_URL`.
 
@@ -85,7 +85,8 @@ Day 2 adds a PostGIS database with immutable-per-run Bronze source evidence, nor
 
 ```powershell
 Copy-Item .env.example .env
-# Edit POSTGRES_PASSWORD and DATABASE_URL together for local use.
+# If host port 5432 is occupied, set POSTGRES_PORT=5433 and change
+# DATABASE_URL's localhost port to 5433 in .env.
 docker compose up -d
 docker compose ps
 python -m pip install -r requirements.txt
@@ -95,7 +96,7 @@ python -m scripts.check_database
 
 `check_database` runs `SELECT PostGIS_Version()`. Connect with `docker compose exec db psql -U supplywatch -d supplywatch`, and verify the extension with `SELECT PostGIS_Version();`. Stop the database with `docker compose down`; the named volume retains data. `docker compose down -v` removes that volume and is destructive.
 
-Set `DATABASE_URL`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT` and `EXPOSURE_THRESHOLDS_KM` through the environment. `.env` is ignored by git. Compose defaults are for local development only; choose a private password before use.
+Set `DATABASE_URL`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT` and `EXPOSURE_THRESHOLDS_KM` in `.env` or the environment. Keep the URL credentials and Compose credentials aligned. `.env` is ignored by git. Compose defaults are for local development only; change the placeholder password before use outside a local machine.
 
 ### Bronze and Silver
 
@@ -122,14 +123,49 @@ SELECT PostGIS_Version();
 
 `python -m scripts.database_report` returns counts and distance band distribution from the database. Python analytics in `analytics/queries.py` also provides nearest-event, per-port-event, country grouping and latest event queries.
 
-### Tests and execution status
+### Validation results (2026-11-03)
 
-Run `python -m pytest -q`. Day 1's 14 tests remain intact. On this run, 19 tests passed and 3 opt-in PostgreSQL/PostGIS integration checks were skipped because `SUPPLYWATCH_TEST_DATABASE_URL` was not configured. Day 2 unit tests cover ORM tables, geography configuration and invalid coordinate/threshold handling. The latest successful Day 1 run `a7920caf0c5341169774b30bcef34a06` contains 3,689 raw port features, 3,687 normalized ports, and 1,817 raw and normalized earthquake features. Docker CLI/Compose are present, but the local Docker engine was unavailable and its service could not be started. A native PostgreSQL 18 service is running, but it rejected the configured `supplywatch` credentials. Therefore no database migration, PostGIS version, Bronze/Silver load, exposure calculation, or database-backed count is claimed as executed. Start Docker Desktop or configure credentials for a disposable PostGIS database, then run the commands above to produce those live statistics.
+The Compose container is healthy on host port 5433 (5432 was occupied by a separate native PostgreSQL service). Verified versions: PostgreSQL 16.4 and PostGIS 3.4. Alembic revision `0001_initial` is current. The migration creates all five application tables, the two Silver geography GiST indexes, foreign keys, uniqueness constraints, and coordinate checks. `SELECT ST_AsText(ST_SetSRID(ST_MakePoint(72.8777,19.0760),4326))` returned `POINT(72.8777 19.076)`; a geography distance query returned meters.
 
-Known limits: the pipeline loads the most recent successful run by default, does not delete events omitted from a later feed, and keeps current exposure pairs rather than a full calculation-history table. Bronze preserves run evidence for later history/versioning. Day 3 can add broader environmental sources and dated exposure snapshots without converting proximity into a disruption claim.
+The actual successful Day 1 run `a7920caf0c5341169774b30bcef34a06` was loaded. Database counts: Bronze ports 3,689; Bronze earthquakes 1,817; Silver ports 3,687; Silver earthquakes 1,817; exposure relationships 28,028. Silver rejected no additional rows; Day 1 had already excluded 2 invalid ports from normalized output while Bronze retained their raw evidence. The second loader run inserted 0 Bronze/Silver rows, counted 5,506 repeated Bronze features, and reported all 5,504 Silver rows unchanged. Database counts remained constant.
 
-Planned: Day 3 analytical models and indicators; Day 4 orchestration and dashboard; later reliability and performance work.
+Exclusive exposure bands contain 1,380 pairs within 50 km, 5,164 within 50–100 km, and 21,484 within 100–250 km. Cumulative ports with at least one nearby event: 230 within 50 km, 395 within 100 km, 762 within 250 km. Example closest pair: WPI port `20140`, USGS event `aka2026vgrxfn`, 671.038 m. Farthest saved pair within the maximum radius: port `18520`, event `uw714131781`, 249,998.816 m. These relationships indicate proximity only.
+
+The complete suite passed: 23 passed, 0 failed, 0 skipped, including four PostgreSQL/PostGIS integration tests against a separate migrated `supplywatch_test` database. Tests cover known geography distance and coordinate order; inclusive 50/100/250 km boundaries and near-boundary points; outside-radius exclusion; invalid coordinates; foreign keys; analytics; and calculation reruns. Controlled test records were rolled back and did not enter source or production-like data.
+
+To run integration tests locally, create and migrate a disposable test DB (adjust port/password to match `.env`):
+
+```powershell
+docker compose exec db createdb -U supplywatch supplywatch_test
+$testUrl = 'postgresql+psycopg://supplywatch:change-me-locally@localhost:5433/supplywatch_test'
+$env:DATABASE_URL = $testUrl
+alembic upgrade head
+$env:SUPPLYWATCH_TEST_DATABASE_URL = $testUrl
+python -m pytest -v
+```
+
+Known limits: loading defaults to the most recent successful run; missing later feed records are not deleted; current exposure rows are refreshed in place rather than stored as a full time series. Bronze preserves run evidence for future history/versioning. Day 3 can add dated snapshots and vetted environmental sources without converting proximity into a disruption claim.
+
+Planned: Day 4 orchestration and dashboard; later reliability and performance work.
 
 ## Limitations and attribution
 
 Port data is a hosted WPI-derived layer and its refresh schedule and layer-specific reuse terms are unclear. Attribute both NGA WPI and OCHA GIS and verify current terms before redistribution. USGS records can be revised, and optional properties can be null. Proximity is not proof of operational impact. Marine forecasts are not navigation advice. See [source notes](docs/DATA_SOURCES.md) and [architecture](docs/ARCHITECTURE.md).
+
+## Day 3: historical and incremental processing
+
+Alembic revision `0002_historical_processing` adds database-backed source runs and effective-dated record history. The existing loader computes stable SHA-256 fingerprints over explicit business fields, updates Silver only for changed records, and creates historical versions in the same transaction. Bronze remains run-scoped and append-only; missing source records are never deleted.
+
+```powershell
+alembic upgrade head
+python -m scripts.load_database --help
+python -m scripts.history_report runs
+python -m scripts.history_report versions port 20140
+python -m scripts.history_report as-of port 20140 2026-11-01T00:00:00Z
+python -m scripts.history_report freshness
+python -m scripts.history_report compare <run-id-1> <run-id-2>
+```
+
+Set `FRESHNESS_THRESHOLDS_HOURS` to comma-separated `source-name=hours` values to enable stale/fresh evaluation, for example `FRESHNESS_THRESHOLDS_HOURS="USGS FDSN Event Web Service=24"`. With no configured threshold the report returns `stale: null`. Source event times, source publication/update times, and ingestion times remain distinct.
+
+Each source is tracked independently in `ingestion_runs`; replaying the same terminal DB run is rejected to preserve its audit metrics. Run `alembic upgrade head` before loading. PostgreSQL integration tests require a disposable migrated database selected via `SUPPLYWATCH_TEST_DATABASE_URL`; see [Day 3 implementation](docs/DAY_3_IMPLEMENTATION.md).

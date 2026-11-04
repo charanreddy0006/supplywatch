@@ -12,12 +12,20 @@ class EarthquakeExtractor:
     def __init__(self, client: HttpClient, endpoint: str) -> None:
         self.client, self.endpoint = client, endpoint
         self.invalid_records = self.duplicates_removed = 0
+        self.snapshot_complete = False
+        self.snapshot_completeness = "unknown"
         self.logger = logging.getLogger(__name__)
 
     def fetch(self, start: datetime, end: datetime) -> dict[str, Any]:
         params = {"format": "geojson", "starttime": start.astimezone(timezone.utc).isoformat(),
                   "endtime": end.astimezone(timezone.utc).isoformat()}
-        return self.client.get_json(self.endpoint, params=params)
+        payload = self.client.get_json(self.endpoint, params=params)
+        metadata = payload.get("metadata") if isinstance(payload, dict) else None
+        count = metadata.get("count") if isinstance(metadata, dict) else None
+        features = payload.get("features") if isinstance(payload, dict) else None
+        self.snapshot_complete = isinstance(count, int) and isinstance(features, list) and count == len(features)
+        self.snapshot_completeness = "complete" if self.snapshot_complete else ("partial" if isinstance(count, int) and isinstance(features, list) and count > len(features) else "unknown")
+        return payload
 
     def extract(self, payload: dict[str, Any], ingested_at: datetime | None = None) -> list[EarthquakeRecord]:
         if not isinstance(payload, dict) or payload.get("type") != "FeatureCollection" or not isinstance(payload.get("features"), list):

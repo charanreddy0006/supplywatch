@@ -4,7 +4,8 @@ from processing.loader import _valid_coordinates
 from processing.spatial_processor import calculate_exposures
 
 def test_day2_schema_has_all_five_tables():
-    assert set(Base.metadata.tables) == {"bronze_ports", "bronze_earthquakes", "silver_ports", "silver_earthquakes", "port_event_exposure"}
+    assert {"bronze_ports", "bronze_earthquakes", "silver_ports", "silver_earthquakes", "port_event_exposure"} <= set(Base.metadata.tables)
+    assert {"ingestion_runs", "record_history"} <= set(Base.metadata.tables)
 
 def test_silver_spatial_points_are_geography_4326():
     assert SilverPort.__table__.c.location.type.srid == 4326

@@ -32,6 +32,7 @@ def run_pipeline(settings: Settings | None = None) -> tuple[dict, int]:
                        "records_normalized": 0, "invalid_records": 0, "duplicates_removed": 0}
         try:
             payload = extractor.fetch() if date_range is None else extractor.fetch(*date_range)
+            entry["snapshot_completeness"] = getattr(extractor, "snapshot_completeness", "complete" if getattr(extractor, "snapshot_complete", False) else "unknown")
             entry["records_retrieved"] = len(payload.get("features", []))
             entry["raw_path"] = str(storage.write_payload(name, run_id, payload))
             normalized = extractor.extract(payload)

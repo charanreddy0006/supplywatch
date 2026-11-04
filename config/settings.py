@@ -17,10 +17,16 @@ class Settings:
     ports_url: str = "https://gis.unocha.org/server/rest/services/Hosted/global_world_seaport_index_202511/FeatureServer/0/query"
     database_url: str = "postgresql+psycopg://supplywatch:supplywatch@localhost:5432/supplywatch"
     exposure_thresholds_km: tuple[float, ...] = (50.0, 100.0, 250.0)
+    freshness_thresholds_hours: dict[str, float] | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv()
+        threshold_values = {}
+        for item in os.getenv("FRESHNESS_THRESHOLDS_HOURS", "").split(","):
+            if item.strip():
+                source, hours = item.rsplit("=", 1)
+                threshold_values[source.strip()] = float(hours)
         return cls(
             environment=os.getenv("SUPPLYWATCH_ENV", "development"),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
@@ -33,4 +39,5 @@ class Settings:
             ports_url=os.getenv("PORTS_URL", cls.ports_url),
             database_url=os.getenv("DATABASE_URL", cls.database_url),
             exposure_thresholds_km=tuple(float(x) for x in os.getenv("EXPOSURE_THRESHOLDS_KM", "50,100,250").split(",") if x.strip()),
+            freshness_thresholds_hours=threshold_values,
         )

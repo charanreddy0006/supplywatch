@@ -3,6 +3,7 @@ import logging
 from time import perf_counter
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from config.spatial import EXPOSURE_BOUNDARY_TOLERANCE_METERS
 
 log = logging.getLogger(__name__)
 
@@ -11,7 +12,11 @@ def calculate_exposures(session: Session, thresholds_km=(50.0, 100.0, 250.0)) ->
     thresholds = sorted(float(v) for v in thresholds_km)
     if not thresholds or thresholds[0] <= 0: raise ValueError("Distance thresholds must be positive")
     max_m = thresholds[-1] * 1000
-    band_case = "CASE " + " ".join(f"WHEN distance_meters <= {v * 1000} THEN 'Within {v:g} km'" for v in thresholds) + " ELSE NULL END"
+    # ST_DWithin can exclude a point constructed at the exact geodesic limit
+    # due to floating point rounding. A 1 mm tolerance keeps boundary behavior
+    # inclusive while remaining negligible at the configured km-scale bands.
+    boundary_tolerance_m = EXPOSURE_BOUNDARY_TOLERANCE_METERS
+    band_case = "CASE " + " ".join(f"WHEN distance_meters <= {v * 1000 + boundary_tolerance_m} THEN 'Within {v:g} km'" for v in thresholds) + " ELSE NULL END"
     now = datetime.now(timezone.utc)
     rows = session.execute(text(f"""
         WITH measured AS (
@@ -19,7 +24,7 @@ def calculate_exposures(session: Session, thresholds_km=(50.0, 100.0, 250.0)) ->
                  ST_Distance(p.location, q.location) AS distance_meters
           FROM silver_ports p
           JOIN silver_earthquakes q
-            ON ST_DWithin(p.location, q.location, :max_meters)
+            ON ST_DWithin(p.location, q.location, :max_meters + :boundary_tolerance_m)
         ), nearby AS (
           SELECT port_id,event_id,distance_meters,
                  {band_case} AS proximity_band
@@ -34,9 +39,9 @@ def calculate_exposures(session: Session, thresholds_km=(50.0, 100.0, 250.0)) ->
           proximity_band=EXCLUDED.proximity_band,
           calculated_at=EXCLUDED.calculated_at
         RETURNING port_id,event_id,distance_meters,proximity_band
-    """), {"max_meters": max_m, "calculated_at": now}).mappings().all()
+    """), {"max_meters": max_m, "boundary_tolerance_m": boundary_tolerance_m, "calculated_at": now}).mappings().all()
     # Remove relationships that no longer meet the configured search area after a recalculation.
-    session.execute(text("DELETE FROM port_event_exposure e WHERE NOT EXISTS (SELECT 1 FROM silver_ports p JOIN silver_earthquakes q ON p.port_id=e.port_id AND q.event_id=e.event_id WHERE ST_DWithin(p.location,q.location,:max_meters))"), {"max_meters": max_m})
+    session.execute(text("DELETE FROM port_event_exposure e WHERE NOT EXISTS (SELECT 1 FROM silver_ports p JOIN silver_earthquakes q ON p.port_id=e.port_id AND q.event_id=e.event_id WHERE ST_DWithin(p.location,q.location,:max_meters + :boundary_tolerance_m))"), {"max_meters": max_m, "boundary_tolerance_m": boundary_tolerance_m})
     session.flush()
     result = {"relationships": len(rows), "calculated_at": now.isoformat(), "thresholds_km": thresholds, "max_radius_km": thresholds[-1], "duration_seconds": round(perf_counter() - started, 3)}
     log.info("spatial association result=%s", result)
