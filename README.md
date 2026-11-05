@@ -146,7 +146,7 @@ python -m pytest -v
 
 Known limits: loading defaults to the most recent successful run; missing later feed records are not deleted; current exposure rows are refreshed in place rather than stored as a full time series. Bronze preserves run evidence for future history/versioning. Day 3 can add dated snapshots and vetted environmental sources without converting proximity into a disruption claim.
 
-Planned: Day 4 orchestration and dashboard; later reliability and performance work.
+Planned: Later orchestration and dashboard work.
 
 ## Limitations and attribution
 
@@ -169,3 +169,21 @@ python -m scripts.history_report compare <run-id-1> <run-id-2>
 Set `FRESHNESS_THRESHOLDS_HOURS` to comma-separated `source-name=hours` values to enable stale/fresh evaluation, for example `FRESHNESS_THRESHOLDS_HOURS="USGS FDSN Event Web Service=24"`. With no configured threshold the report returns `stale: null`. Source event times, source publication/update times, and ingestion times remain distinct.
 
 Each source is tracked independently in `ingestion_runs`; replaying the same terminal DB run is rejected to preserve its audit metrics. Run `alembic upgrade head` before loading. PostgreSQL integration tests require a disposable migrated database selected via `SUPPLYWATCH_TEST_DATABASE_URL`; see [Day 3 implementation](docs/DAY_3_IMPLEMENTATION.md).
+
+## Day 4: historical baseline, data quality, and pipeline health
+
+Migration `0003_quality_observability` adds persistent quality executions, rule results, issues, quarantine records, and history provenance. Initialize the actual Silver baseline after migrating:
+
+```powershell
+alembic upgrade head
+python -m scripts.initialize_history_baseline
+python -m scripts.initialize_history_baseline  # idempotency check
+python -m scripts.run_quality_checks --dataset all
+python -m scripts.quality_report --execution-id <execution-id>
+python -m scripts.quarantine_report
+python -m scripts.pipeline_health
+```
+
+Invalid rows are preserved in Bronze/quarantine and are excluded from Silver. Quarantine revalidation gates reprocessing; it never automatically releases a record. Scorecards report completeness, validity, uniqueness, consistency, timeliness, and referential integrity separately using the unweighted pass rate per rule-record evaluation. See [DATA_QUALITY.md](docs/DATA_QUALITY.md), [OBSERVABILITY.md](docs/OBSERVABILITY.md), and [DAY_4_IMPLEMENTATION.md](docs/DAY_4_IMPLEMENTATION.md).
+
+Configure freshness operational targets through `FRESHNESS_THRESHOLDS_HOURS` using exact source names. An example is `FRESHNESS_THRESHOLDS_HOURS="OCHA GIS hosted layer: NGA World Port Index (Pub 150)=168,USGS FDSN Event Web Service=24"`; these are operator-defined thresholds. Missing thresholds report `UNKNOWN`. Configure `USGS_SUPPORTED_MAGNITUDE_TYPES` only when an approved source catalog is available.

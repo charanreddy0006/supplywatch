@@ -40,3 +40,22 @@ flowchart LR
 ```
 
 Day 3 adds `ingestion_runs` and `record_history`, while extending Silver rows with nullable `content_hash` and `last_seen_run_id`. History is effective-dated and stores source identity, normalized snapshot, source run lineage, and the observed time. Existing rows receive their available baseline on their next actual observation; no synthetic pre-migration versions are inserted. The loader hashes explicitly tracked port and earthquake fields, excluding ingestion metadata and exposure relationships. It leaves absent rows untouched, and measures missing observations only for explicitly complete snapshots. See [DAY_3_IMPLEMENTATION.md](DAY_3_IMPLEMENTATION.md) for schema, completeness rules, CLI, tests, and verification state.
+
+## Day 4 quality and observability
+
+```mermaid
+flowchart LR
+  A[Bronze source payloads] --> B[Reusable validators]
+  B -->|valid| C[Silver current state]
+  B -->|invalid| D[quarantined_records]
+  C --> E[PostGIS and history rules]
+  D --> F[Quality execution and issues]
+  E --> F
+  F --> G[Quality scorecards]
+  H[Ingestion runs and thresholds] --> I[Pipeline health]
+  G --> I
+  J[Existing Silver baseline] --> K[Baseline runs and version snapshots]
+  K --> E
+```
+
+Day 4 adds `0003_quality_observability`, a repeatable baseline initializer, persistent quality executions/results/issues, payload-preserving quarantine, six transparent quality dimensions, and pipeline health states. Baseline versions are stamped `baseline_backfill`; preserved Silver `first_ingested_at` remains original row metadata and is not represented as the baseline observation timestamp. Invalid Bronze-only source features remain auditable and are not inserted into Silver. See [DATA_QUALITY.md](DATA_QUALITY.md), [OBSERVABILITY.md](OBSERVABILITY.md), and [DAY_4_IMPLEMENTATION.md](DAY_4_IMPLEMENTATION.md).

@@ -12,6 +12,8 @@ from geoalchemy2 import Geography
 
 from database.models import BronzeEarthquake, BronzePort, IngestionRun, RecordHistory, SilverEarthquake, SilverPort
 from processing.history import canonical_json, content_hash, tracked_record, transition_run
+from quality.quarantine import store_quarantine
+from quality.validators import ValidationError, validate_records
 
 log = logging.getLogger(__name__)
 
@@ -90,9 +92,25 @@ def load_run(session: Session, raw_dir: Path, processed_dir: Path, run_id: str) 
         kind = "port" if key == "ports" else "earthquake"
         pk = "port_id" if key == "ports" else "event_id"
         count_new = count_updated = count_same = count_bad = 0
-        for row in rows:
+        record_type = kind
+        validation_results = validate_records(rows, record_type)
+        raw_by_id = {}
+        for feature in raw.get("features", []):
+            props = feature.get("properties") or {}
+            source_id = props.get("index_no") if key == "ports" else feature.get("id")
+            raw_by_id.setdefault(str(source_id), []).append(feature)
+        observed_occurrences = {}
+        for row_index, row in enumerate(rows):
             try:
                 identity = str(row[pk])
+                observed_occurrences[identity] = observed_occurrences.get(identity, 0) + 1
+                violations = validation_results[row_index]
+                if violations:
+                    feature_list = raw_by_id.get(identity, [])
+                    raw_payload = feature_list[min(observed_occurrences[identity] - 1, len(feature_list) - 1)] if feature_list else {**row, "_source": sources[key]}
+                    store_quarantine(session, source, identity, kind, run_id, source, raw_payload, violations, validation_layer="normalization_validation")
+                    count_bad += 1
+                    continue
                 lat, lon = _valid_coordinates(row)
                 record = json.loads(canonical_json(tracked_record(row, kind)))
                 fingerprint = content_hash(row, kind)
@@ -131,6 +149,11 @@ def load_run(session: Session, raw_dir: Path, processed_dir: Path, run_id: str) 
             except (ValueError, TypeError, KeyError, OverflowError) as exc:
                 count_bad += 1
                 log.warning("Skipping invalid %s record: %s", key, exc)
+                identity = str(row.get(pk)) if row.get(pk) is not None else None
+                payloads = raw_by_id.get(identity, []) if identity else []
+                raw_payload = payloads[0] if payloads else {**row, "_source": source}
+                store_quarantine(session, source, identity, kind, run_id, source, raw_payload,
+                    [ValidationError("record_processing_invalid", "HIGH", str(exc), "record must normalize and satisfy database field constraints", {"error": type(exc).__name__})],validation_layer="normalization_validation")
 
         transition_run(run, "completed" if source_status == "success" else "failed", _stamp(entry.get("completed_at") or manifest.get("completed_at") or datetime.now(timezone.utc)), entry.get("error"))
         run.snapshot_completeness = completeness if completeness in {"complete", "partial", "failed", "unknown"} else "unknown"

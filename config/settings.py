@@ -18,6 +18,7 @@ class Settings:
     database_url: str = "postgresql+psycopg://supplywatch:supplywatch@localhost:5432/supplywatch"
     exposure_thresholds_km: tuple[float, ...] = (50.0, 100.0, 250.0)
     freshness_thresholds_hours: dict[str, float] | None = None
+    usgs_supported_magnitude_types: tuple[str, ...] | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -27,6 +28,7 @@ class Settings:
             if item.strip():
                 source, hours = item.rsplit("=", 1)
                 threshold_values[source.strip()] = float(hours)
+        magnitude_types = tuple(x.strip().lower() for x in os.getenv("USGS_SUPPORTED_MAGNITUDE_TYPES", "").split(",") if x.strip())
         return cls(
             environment=os.getenv("SUPPLYWATCH_ENV", "development"),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
@@ -40,4 +42,5 @@ class Settings:
             database_url=os.getenv("DATABASE_URL", cls.database_url),
             exposure_thresholds_km=tuple(float(x) for x in os.getenv("EXPOSURE_THRESHOLDS_KM", "50,100,250").split(",") if x.strip()),
             freshness_thresholds_hours=threshold_values,
+            usgs_supported_magnitude_types=magnitude_types or None,
         )
