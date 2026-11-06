@@ -4,6 +4,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
+DEFAULT_FRESHNESS_THRESHOLDS_HOURS = {
+    "OCHA GIS hosted layer: NGA World Port Index (Pub 150)": 168.0,
+    "USGS FDSN Event Web Service": 24.0,
+}
+
+
 @dataclass(frozen=True)
 class Settings:
     environment: str = "development"
@@ -23,11 +29,15 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv()
-        threshold_values = {}
-        for item in os.getenv("FRESHNESS_THRESHOLDS_HOURS", "").split(","):
+        configured_thresholds = os.getenv("FRESHNESS_THRESHOLDS_HOURS", "")
+        threshold_values = dict(DEFAULT_FRESHNESS_THRESHOLDS_HOURS) if not configured_thresholds.strip() else {}
+        for item in configured_thresholds.split(","):
             if item.strip():
                 source, hours = item.rsplit("=", 1)
-                threshold_values[source.strip()] = float(hours)
+                threshold = float(hours)
+                if threshold <= 0:
+                    raise ValueError(f"Freshness threshold for {source.strip()} must be positive")
+                threshold_values[source.strip()] = threshold
         magnitude_types = tuple(x.strip().lower() for x in os.getenv("USGS_SUPPORTED_MAGNITUDE_TYPES", "").split(",") if x.strip())
         return cls(
             environment=os.getenv("SUPPLYWATCH_ENV", "development"),

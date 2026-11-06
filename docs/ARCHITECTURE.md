@@ -1,5 +1,11 @@
 # Day 1 architecture
 
+## Integrated local workflow
+
+`python -m scripts.run_full_pipeline` runs the source extractors, stores raw and normalized files plus a manifest, loads Bronze and Silver with history, initializes any missing baseline history idempotently, recalculates PostGIS exposure, executes persisted quality checks, and returns analytics and health. Database mutations after extraction use one SQLAlchemy transaction; an error rolls them back. The command does not claim success if an ingestion source fails or health is stale/failed. `UNKNOWN` freshness remains explicit when no successful evidence exists. `main.py` remains the extraction-only entry point.
+
+The Streamlit dashboard in `dashboard.py` reads the configured PostgreSQL database directly. It has Overview, Port Explorer, Exposure Intelligence, Historical Analytics, Data Quality, and Pipeline Monitoring sections; it does not display fixture metrics as production data.
+
 `main.py` coordinates configuration, one reusable `requests.Session` HTTP client, source extractors and file storage. Each source is handled independently: the complete original response is written to `data/raw/<source>/YYYY/MM/`, then validated records are written under `data/processed/<source>/YYYY/MM/`. One UTC manifest per run captures source state, counts, date range, paths, duration and errors.
 
 The HTTP client uses bounded retries for connection/timeouts, HTTP 429 and server errors, honors numeric or HTTP-date `Retry-After`, and immediately surfaces permanent HTTP failures. Extractors validate required IDs/names, coordinate ranges and timestamps, count invalid entries and remove duplicate IDs. A source failure does not discard the other source's results; the overall exit code is nonzero and the manifest says `partial_failure`.
@@ -22,7 +28,7 @@ flowchart LR
 
 Bronze retains original feature payloads, source IDs where present, run IDs, hashes and ingestion timestamps. Silver keys ports by WPI `index_no` and events by USGS event ID. Geographic point columns use `geography(Point,4326)` for ellipsoidal distance in meters and GiST indexing. The exposure processor filters at the maximum configured radius (default 250 km), assigns one closest applicable band, and upserts each unique pair. A 1 mm numerical tolerance keeps constructed points at a configured boundary inclusive despite floating point behavior. Missing events in a later feed are not deleted. Exposure is geographic proximity evidence only.
 
-Live validation on 2026-11-03 used PostgreSQL 16.4/PostGIS 3.4. The 3,689 Bronze port features, 1,817 Bronze earthquakes, 3,687 Silver ports, and 1,817 Silver events produced 28,028 exposure pairs. Four isolated PostGIS integration tests and 19 other tests passed; the integration fixture transaction was rolled back.
+Historical validation notes from the earlier Day 2 phase reported PostgreSQL 16.4/PostGIS 3.4 and 3,689 Bronze port features, 1,817 Bronze earthquakes, 3,687 Silver ports, 1,817 Silver events, and 28,028 exposure pairs. These are not presented as current counts; see the dated final validation report for the current verification attempt.
 
 The implementation entry points and actual environment constraints are recorded in [DAY_2_IMPLEMENTATION.md](DAY_2_IMPLEMENTATION.md).
 

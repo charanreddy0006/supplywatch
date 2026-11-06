@@ -7,3 +7,5 @@ logs/*.log
 data/raw/
 data/processed/
 postgres-data/
+.streamlit/secrets.toml
+*.tmp

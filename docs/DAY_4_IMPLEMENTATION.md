@@ -21,7 +21,7 @@ Exposure rows remained at 28,028. A second baseline execution populated zero has
 
 The live quality execution was `9c7fec00-3c25-427e-b5ee-2a62d1e8a84c`. It evaluated 33 rules: 31 passed and two failed. The failures are both HIGH severity port source-data findings: the two retained Bronze features have duplicate source ID `0` and missing port names. They remain in Bronze and are quarantined; they were not inserted into Silver. The quality report records 9 open entity-level issues associated with those findings. No Silver, exposure, or historical consistency checks failed.
 
-Earthquake magnitude type catalog checks were excluded because `USGS_SUPPORTED_MAGNITUDE_TYPES` is not configured; the implementation does not invent a closed vocabulary. Both source freshness states are `UNKNOWN` because `FRESHNESS_THRESHOLDS_HOURS` is not configured. The latest successful runs were about 0.13 hours old at verification, but the system does not label a source fresh without an operator threshold. Consequently pipeline health reports `FAILED` due to open HIGH issues, with source freshness `UNKNOWN`.
+Earthquake magnitude type catalog checks were excluded because `USGS_SUPPORTED_MAGNITUDE_TYPES` is not configured; the implementation does not invent a closed vocabulary. At the original Day 4 verification time, both source freshness states were `UNKNOWN` because thresholds were not configured. In the final integration phase, defaults of 168 hours for ports and 24 hours for USGS were added; see [OBSERVABILITY.md](OBSERVABILITY.md). The earlier health and freshness observations are historical and are not current database results.
 
 ## Tests and reproduction
 
@@ -46,4 +46,4 @@ Set explicit source thresholds before using freshness as an operational alert. S
 
 ## Verification status
 
-Implementation, additive migration, live baseline, idempotent replay, real-record quality execution, quarantine persistence, PostGIS checks, and regression tests were verified. The live data does contain unresolved high severity Bronze quality findings, and freshness cannot be classified without configured thresholds. These conditions are reported as-is and are not presented as a clean live quality state.
+The original implementation phase reported an additive migration, live baseline, idempotent replay, real-record quality execution, quarantine persistence, PostGIS checks, and regression tests. Current database contents and health were not rechecked during the final phase because its database endpoint was unavailable; consult [FINAL_VALIDATION_REPORT.md](FINAL_VALIDATION_REPORT.md) for the latest verification limits.

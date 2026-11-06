@@ -13,13 +13,13 @@ An unknown source is never marked fresh. Complete snapshot freshness is reported
 
 ## Configuration
 
-`FRESHNESS_THRESHOLDS_HOURS` is a comma-separated map keyed by the exact database source name. Example operational targets:
+`FRESHNESS_THRESHOLDS_HOURS` is a comma-separated map keyed by the exact database source name. The `.env.example` and runtime defaults configure the following operational targets:
 
 ```dotenv
 FRESHNESS_THRESHOLDS_HOURS="OCHA GIS hosted layer: NGA World Port Index (Pub 150)=168,USGS FDSN Event Web Service=24"
 ```
 
-These values are operator targets, not claims about the providers' publication schedules. The OCHA WPI hosted layer has no stated refresh cadence in the project source notes. Set thresholds based on the deployment's operating agreement; until then health is `UNKNOWN`. Use `USGS_SUPPORTED_MAGNITUDE_TYPES` only when a source catalog has been approved for that deployment.
+The 168-hour port target reflects that the hosted layer has no stated refresh cadence and is checked weekly; the 24-hour USGS target is a daily monitoring interval for a frequently updated event service. These values are operator targets, not guarantees about provider publication schedules, and can be overridden for a deployment. An empty setting uses these documented defaults. Set a positive threshold for each exact source name to override. Use `USGS_SUPPORTED_MAGNITUDE_TYPES` only when a source catalog has been approved for that deployment.
 
 ## CLI
 
@@ -32,3 +32,5 @@ python -m scripts.quality_report --execution-id <execution-id>
 ```
 
 Pipeline health includes latest run status and counts, last successful/complete timestamps, calculated age and threshold, open quality issues by severity, quarantine counts, and current hash/history coverage. Exit code 1 signals stale/failed health; unknown is reported and does not claim freshness.
+
+The database-backed dashboard runs with `streamlit run dashboard.py`. It presents source run outcomes and computes freshness from the same configured thresholds. A later failed attempt is visible as `FAILED`, while the successful completion timestamp remains available for diagnosis.
